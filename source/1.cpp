@@ -2,18 +2,21 @@
 #include <string>
 #include <vector>
 #include <stack>
+#include <map>
 
 using std::cout;
 using std::endl;
 
 enum OPERATOR {
 	LBRACKET, RBRACKET,
+	ASSIGN,
 	PLUS, MINUS,
 	MULTIPLY
 };
 
 std::string OPERTEXT[] {
 	"(", ")",
+	"=",
 	"+", "-",
 	"*"
 };
@@ -24,8 +27,9 @@ enum LEXEMTYPE {
 
 int PRIORITY[] = {
 	-1, -1,
-	0, 0,
-	1
+	0,
+	1, 1,
+	2
 };
 
 class Lexem {
@@ -59,6 +63,14 @@ public:
 	int getPriority();
 	int getValue(Number* left, Number* right);
 	void print(OPERATOR op);
+};
+
+class Variable: public Lexem {
+	std::string name;
+public:
+	Variable(const std::string &name);
+	int getValue();
+	void setValue(int value);
 };
 
 Oper::Oper(OPERATOR op) {
@@ -111,6 +123,7 @@ int Oper::getValue(Number* left_ptr, Number* right_ptr) {
 	if (opertype == PLUS) {
 		return left + right;
 	}
+
 	return 1;
 }
 
@@ -174,9 +187,18 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 			postfix.push_back(infix[i]);
 		}
 		if (infix[i]->getLexemtype() == OPER) {
-			/*if (OPER == LBRACKET) {
-				stack.push(infix[i]);
-			}*/
+			if (static_cast<Oper *>(infix[i])->getType() == LBRACKET) {
+				stack.push(static_cast<Oper*>(infix[i]));
+				continue;
+			}
+			if (static_cast<Oper *>(infix[i])->getType() == RBRACKET) {
+				while (stack.top()->getType() != LBRACKET) {
+					postfix.push_back(stack.top());
+					stack.pop();
+				}
+				stack.pop();
+				continue;
+			}
 			if (stack.empty()) {
 				stack.push(static_cast<Oper *>(infix[i]));
 				continue;
@@ -190,12 +212,6 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 			if (static_cast<Oper *>(infix[i])->getPriority() > x->getPriority()) {
 				stack.push(static_cast<Oper *>(infix[i]));
 			}
-			/*if (OPER == MULTIPLY) {
-				stack.push(infix[i]);
-			}
-			if (OPER == RBRACKET) {
-				while ()
-			}*/	
 		}
 	}
 	if (stack.size() != 0) {
