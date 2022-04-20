@@ -7,6 +7,8 @@
 using std::cout;
 using std::endl;
 
+std::map<std::string, int> vars;
+
 enum OPERATOR {
 	LBRACKET, RBRACKET,
 	ASSIGN,
@@ -22,7 +24,7 @@ std::string OPERTEXT[] {
 };
 
 enum LEXEMTYPE {
-	NUM, OPER
+	NUM, OPER, VAR
 };
 
 int PRIORITY[] = {
@@ -61,7 +63,8 @@ public:
 	Oper(OPERATOR op);
 	OPERATOR getType();
 	int getPriority();
-	int getValue(Number* left, Number* right);
+	int evalNum(int left, int right);
+	int getValue(Lexem* left, Lexem* right);
 	void print(OPERATOR op);
 };
 
@@ -69,9 +72,28 @@ class Variable: public Lexem {
 	std::string name;
 public:
 	Variable(const std::string &name);
+	std::string getName();
 	int getValue();
 	void setValue(int value);
 };
+
+Variable::Variable(const std::string &name) {
+	this->name = name;
+	setLexemType(VAR);
+	//vars[name] = 0;
+}
+
+std::string Variable::getName() {
+	return name;
+}
+
+int Variable::getValue() {
+	return vars[name];
+}
+
+void Variable::setValue(int value) {
+	vars[name] = value;
+}
 
 Oper::Oper(OPERATOR op) {
 	setLexemType(OPER);
@@ -111,9 +133,7 @@ void Number::print(int value) {
 	std::cout << value << std::endl; 
 }
 
-int Oper::getValue(Number* left_ptr, Number* right_ptr) {
-	int left = left_ptr->getValue();
-	int right = right_ptr->getValue();
+int Oper::evalNum(int left, int right) {
 	if (opertype == MULTIPLY) {
 		return left * right;
 	}	
@@ -123,8 +143,35 @@ int Oper::getValue(Number* left_ptr, Number* right_ptr) {
 	if (opertype == PLUS) {
 		return left + right;
 	}
+	return 0;
+}
 
-	return 1;
+int Oper::getValue(Lexem *left, Lexem *right) {
+	if (opertype == ASSIGN) {
+		if (left->getLexemtype() == VAR && right->getLexemtype() == VAR) {
+			vars[static_cast<Variable *>(left)->getName()] = static_cast<Variable *>(right)->getValue();
+			return static_cast<Variable *>(right)->getValue();
+		} 
+		if (left->getLexemtype() == VAR && right->getLexemtype() == NUM) {
+			vars[static_cast<Variable *>(left)->getName()] = static_cast<Number *>(right)->getValue();
+			return static_cast<Number *>(right)->getValue();
+		}
+		if (left->getLexemtype() == NUM && right->getLexemtype() == VAR) {
+			return static_cast<Variable *>(right)->getValue();			
+		}
+		if (left->getLexemtype() == NUM && right->getLexemtype() == NUM) {
+			return static_cast<Number *>(right)->getValue();
+		}
+	}
+	if (left->getLexemtype() == VAR && right->getLexemtype() == VAR) 
+		return evalNum(static_cast<Variable *>(left)->getValue(), static_cast<Variable *>(right)->getValue());
+	if (left->getLexemtype() == VAR && right->getLexemtype() == NUM) {
+		return evalNum(static_cast<Variable *>(left)->getValue(), static_cast<Number *>(right)->getValue());
+	}
+	if (left->getLexemtype() == NUM && right->getLexemtype() == VAR) {
+		return evalNum(static_cast<Number *>(left)->getValue(), static_cast<Variable *>(right)->getValue());
+	}
+	return evalNum(static_cast<Number *>(left)->getValue(), static_cast<Number *>(right)->getValue());
 }
 
 Lexem *checkNum(std::string codeline, int &i) {
@@ -152,6 +199,20 @@ Lexem *checkOper(std::string codeline, int &i) {
 	return nullptr;
 }
 
+
+Lexem *checkVars(std::string codeline, int &i) {
+	if (isalpha(codeline[i])) {
+		std::string tmp;
+		while (isalpha(codeline[i])) {
+			tmp.push_back(codeline[i]);
+			i++;
+		}
+		i--;
+		return new Variable(tmp);
+	}
+	return nullptr;
+}
+
 std::vector<Lexem *> parseLexem(std::string codeline) {
 	std::vector<Lexem *> infix;
 	int i;
@@ -162,6 +223,10 @@ std::vector<Lexem *> parseLexem(std::string codeline) {
 			continue;
 		}
 		if (ptr = checkOper(codeline, i)) {
+			infix.push_back(ptr);
+			continue;
+		}
+		if (ptr = checkVars(codeline, i)) {
 			infix.push_back(ptr);
 			continue;
 		}
@@ -185,6 +250,10 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 	for (i = 0; i < infix.size(); i++) {
 		if (infix[i]->getLexemtype() == NUM) {
 			postfix.push_back(infix[i]);
+		}
+		if (infix[i]->getLexemtype() == VAR) {
+			postfix.push_back(infix[i]);
+			continue;
 		}
 		if (infix[i]->getLexemtype() == OPER) {
 			if (static_cast<Oper *>(infix[i])->getType() == LBRACKET) {
@@ -223,23 +292,24 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 	return postfix;
 }
 
+
 int evaluatePoliz(std::vector<Lexem *> postfix) {
-	std::stack<Number *> stack;
+	std::stack<Lexem *> stack;
 	for (int i = 0; i < postfix.size(); i++) {
-		if (postfix[i]->getLexemtype() == NUM) {
-			stack.push(static_cast<Number *>(postfix[i]));
+		if (postfix[i]->getLexemtype() == NUM || postfix[i]->getLexemtype() == VAR) {
+			stack.push(postfix[i]);
 		}
 		else {
-			Number* right = stack.top();
+			Lexem *right = stack.top();
 			stack.pop();
-			Number* left = stack.top(); 
+			Lexem *left = stack.top(); 
 			stack.pop();
-			Oper* ptr = static_cast<Oper *>(postfix[i]);
+			Oper *ptr = static_cast<Oper *>(postfix[i]);
 			int n = ptr->getValue(left, right);
 			stack.push(new Number(n));
 		}
 	}
-	Number* ans = stack.top();
+	Number *ans = static_cast<Number *>(stack.top());
 	stack.pop();
 	return ans->getValue();
 }
@@ -252,11 +322,10 @@ int main() {
 
 	while (std::getline(std::cin, codeline)) {
 		infix = parseLexem(codeline);
-		//cout << infix.size() << endl;
-		 postfix = buildPoliz(infix);
-		 print(postfix);
+		postfix = buildPoliz(infix);
 		value = evaluatePoliz(postfix);
 		std::cout << value << std::endl;
+
 	}
 	return 0;
 }
