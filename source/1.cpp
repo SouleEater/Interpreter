@@ -10,17 +10,33 @@ using std::endl;
 std::map<std::string, int> vars;
 
 enum OPERATOR {
+	GOTO, ASSIGN, COLON,
 	LBRACKET, RBRACKET,
-	ASSIGN,
+	OR,
+	AND,
+	BITOR,
+	XOR,
+	BITAND,
+	EQ, NEQ,
+	SHL, SHR,
+	LEQ, LT, GEQ, GT,
 	PLUS, MINUS,
-	MULTIPLY
+	MULTIPLY, DIV, MOD
 };
 
 std::string OPERTEXT[] {
+	"goto", "=", ":",
 	"(", ")",
-	"=",
+	"or",
+	"and",
+	"|",
+	"^",
+	"&",
+	"==", "!=",
+	"<<", ">>",
+	"<=", "<", ">=", ">",
 	"+", "-",
-	"*"
+	"*", "/", "%"
 };
 
 enum LEXEMTYPE {
@@ -28,10 +44,18 @@ enum LEXEMTYPE {
 };
 
 int PRIORITY[] = {
+	-2, 0, -2,
 	-1, -1,
-	0,
-	1, 1,
-	2
+	1,
+	2,
+	3,
+	4,
+	5,
+	6, 6,
+	8, 8,
+	7, 7, 7, 7,
+	9, 9,
+	10, 10, 10
 };
 
 class Lexem {
@@ -142,6 +166,51 @@ int Oper::evalNum(int left, int right) {
 	}
 	if (opertype == PLUS) {
 		return left + right;
+	}
+	if (opertype == MOD) {
+		return left % right;
+	}
+	if (opertype == DIV) {
+		return left / right;
+	}
+	if (opertype == OR) {
+		return left or right;
+	}
+	if (opertype == AND) {
+		return left and right;
+	} 
+	if (opertype == BITOR) {
+		return left | right;
+	}
+	if (opertype == XOR) {
+		return left ^ right;
+	}
+	if (opertype == BITAND) {
+		return left & right;
+	}
+	if (opertype == NEQ) {
+		return left != right;
+	}
+	if (opertype == LEQ) {
+		return left <= right;
+	}
+	if (opertype == EQ) {
+		return left == right;
+	}
+	if (opertype == LT) {
+		return left < right;
+	}
+	if (opertype == GEQ) {
+		return left >= right;
+	}
+	if (opertype == GT) {
+		return left > right;
+	}
+	if (opertype == SHL) {
+		return left << right;
+	}
+	if (opertype == SHR) {
+		return left >> right;
 	}
 	return 0;
 }
@@ -274,8 +343,11 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 			}
 			Oper* x = stack.top();
 			if (static_cast<Oper *>(infix[i])->getPriority() <= x->getPriority()) {
-				postfix.push_back(x);
-				stack.pop();
+				while (!stack.empty()) {
+					x = stack.top();
+					postfix.push_back(x);
+					stack.pop();
+				}
 				stack.push(static_cast<Oper *>(infix[i]));
 			}
 			if (static_cast<Oper *>(infix[i])->getPriority() > x->getPriority()) {
@@ -323,6 +395,7 @@ int main() {
 	while (std::getline(std::cin, codeline)) {
 		infix = parseLexem(codeline);
 		postfix = buildPoliz(infix);
+		print(postfix);
 		value = evaluatePoliz(postfix);
 		std::cout << value << std::endl;
 
