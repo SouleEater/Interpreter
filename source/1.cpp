@@ -8,6 +8,7 @@ using std::cout;
 using std::endl;
 
 std::map<std::string, int> vars;
+std::map<std::string, int> labels;
 
 enum OPERATOR {
 	GOTO, ASSIGN, COLON,
@@ -99,7 +100,12 @@ public:
 	std::string getName();
 	int getValue();
 	void setValue(int value);
+	int getRow();
 };
+
+int Variable::getRow() {
+	return labels[name];
+}
 
 Variable::Variable(const std::string &name) {
 	this->name = name;
@@ -361,17 +367,21 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 			stack.pop();
 		}
 	}
+	print(postfix);
 	return postfix;
 }
 
 
-int evaluatePoliz(std::vector<Lexem *> postfix) {
+int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 	std::stack<Lexem *> stack;
 	for (int i = 0; i < postfix.size(); i++) {
 		if (postfix[i]->getLexemtype() == NUM || postfix[i]->getLexemtype() == VAR) {
 			stack.push(postfix[i]);
 		}
 		else {
+			if (static_cast<Oper *>(postfix[i])->getType() == GOTO) {
+				return static_cast<Variable *>(postfix[i + 1])->getRow();
+			}
 			Lexem *right = stack.top();
 			stack.pop();
 			Lexem *left = stack.top(); 
@@ -383,22 +393,46 @@ int evaluatePoliz(std::vector<Lexem *> postfix) {
 	}
 	Number *ans = static_cast<Number *>(stack.top());
 	stack.pop();
-	return ans->getValue();
+	cout <<  "answer is: " << ans->getValue() << endl;
+	return row++;
+}
+
+void initLabels(std::vector<Lexem *> &infix, int &row) {
+	for (int i = 1; i < (int)infix.size(); i++) {
+		if (infix[i - 1]->getLexemtype() == VAR && infix[i]->getLexemtype() == OPER) {
+			Variable *lexemvar = static_cast<Variable *>(infix[i-1]);
+			Oper *lexemop = static_cast<Oper *>(infix[i]);
+			if (lexemop->getType() == COLON) {
+				labels[lexemvar->getName()] = row;
+				auto elem = infix.begin() + i - 1;
+				infix.erase(elem);
+				infix.erase(elem);
+				// delete infix[i - 1];
+				// delete infix[i];
+				// infix[i - 1] = nullptr;
+				// infix[i] = nullptr;
+				i++;
+			}
+		} 
+	} 
 }
 
 int main() {
 	std::string codeline;
-	std::vector<Lexem *> infix;
-	std::vector<Lexem *> postfix;
-	int value;
+	std::vector<std::vector<Lexem *>> infixLines, postfixLines;
 
 	while (std::getline(std::cin, codeline)) {
-		infix = parseLexem(codeline);
-		postfix = buildPoliz(infix);
-		print(postfix);
-		value = evaluatePoliz(postfix);
-		std::cout << value << std::endl;
-
+		infixLines.push_back(parseLexem(codeline));
+	}	
+	for (int row = 0; row < infixLines.size(); row++) {
+		initLabels(infixLines[row], row);
+	}
+	for (const auto &infix: infixLines) {
+		postfixLines.push_back(buildPoliz(infix));
+	}
+	int row = 0;
+	while (0 <= row && row < postfixLines.size()) {
+		row = evaluatePoliz(postfixLines[row], row);
 	}
 	return 0;
 }
