@@ -9,6 +9,7 @@ using std::endl;
 
 std::map<std::string, int> vars;
 std::map<std::string, int> labels;
+std::map<std::string, std::vector<int> > ArrayTable;
 
 enum OPERATOR {
 	IF, THEN,
@@ -16,6 +17,7 @@ enum OPERATOR {
 	WHILE, ENDWHILE,
 	GOTO, ASSIGN, COLON,
 	LBRACKET, RBRACKET,
+	LQBRACKET, RQBRACKET,
 	OR,
 	AND,
 	BITOR,
@@ -34,6 +36,7 @@ std::string OPERTEXT[] {
 	"while", "endwhile",
 	"goto", "=", ":",
 	"(", ")",
+	"[", "]",
 	"or",
 	"and",
 	"|",
@@ -74,7 +77,7 @@ public:
 	Lexem();
 	void setLexemType(LEXEMTYPE type);
 	LEXEMTYPE getLexemtype();
-	virtual ~Lexem() {};
+	virtual ~Lexem() { /*cout << "~Lexem" << endl;*/ };
 };
 
 void Lexem::setLexemType(LEXEMTYPE type) {
@@ -86,7 +89,7 @@ LEXEMTYPE Lexem::getLexemtype() {
 }
 
 Lexem::Lexem() {
-
+	// cout << "Lexem" << endl;
 }
 
 class Number;
@@ -106,9 +109,26 @@ public:
 
 class Item: public Lexem {
 public:
+	Item() { /*cout << "Item" << endl; */};
 	virtual int getValue() = 0;
-	virtual ~Item() {};
+	virtual ~Item() { /*cout << "~Item" << endl;*/ };
 };
+
+class ArrayElem: public Lexem {
+	std::string name;
+	int index;
+public:
+	int getValue();
+	void setValue(int value);
+};
+
+int ArrayElem::getValue() {
+	return ArrayTable[name][index];
+}
+
+void ArrayElem::setValue(int value) {
+	ArrayTable[name][index] = value;
+}
 
 class Variable: public Item {
 	std::string name;
@@ -165,9 +185,11 @@ int Oper::getPriority() {
 class Number: public Item {
 	int value;
 public:
+	Number() {/*cout << "Number" << endl;*/ };
 	Number(int value);
 	void print(int value);
 	int getValue();
+	~Number() { /*cout << "~Number" << endl;*/ }
 };
 
 Number::Number(int val) {
@@ -424,6 +446,7 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 
 int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 	std::stack<Lexem *> stack;
+	std::vector<Number *> del;
 	for (int i = 0; i < postfix.size(); i++) {
 		if (postfix[i] == nullptr) {
 			continue;
@@ -435,7 +458,7 @@ int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 			if (static_cast<Oper *>(postfix[i])->getType() == GOTO 
 					|| static_cast<Oper *>(postfix[i])->getType() == ELSE 
 						|| static_cast<Oper *>(postfix[i])->getType() == ENDWHILE) {
-				return static_cast<Goto *>(postfix[i - 1])->getRow();
+				return static_cast<Goto *>(postfix[i])->getRow();
 			}
 			if (static_cast<Oper *>(postfix[i])->getType() == IF
 					|| static_cast<Oper *>(postfix[i])->getType() == WHILE) {
@@ -443,9 +466,19 @@ int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 				int r = static_cast<Number *>(stack.top())->getValue();
 				stack.pop();
 				if (!r) {
+					for (int i = 0; i < del.size(); i++) {
+						cout << static_cast<Number *>(del[i])->getValue() << ": ";
+						delete del[i];
+						cout << "del" << endl;
+					}
 					return lexemgoto->getRow();
 				}
 				else {
+					for (int i = 0; i < del.size(); i++) {
+						cout << static_cast<Number *>(del[i])->getValue() << ": ";
+						delete del[i];
+						cout << "del" << endl;
+					}
 					return row + 1;
 				}
 			}
@@ -454,14 +487,26 @@ int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 			Lexem *left = stack.top(); 
 			stack.pop();
 			Oper *ptr = static_cast<Oper *>(postfix[i]);
-			int n = ptr->getValue(left, right);
-			stack.push(new Number(n));
+			stack.push(new Number(ptr->getValue(left, right)));
+			cout << "NEW: " << static_cast<Number *>(stack.top())->getValue() << endl;
+			del.push_back(static_cast<Number *>(stack.top()));
+			continue;
 		}
+
 	}
+
 	if (stack.size()) { 
 		Number *ans = static_cast<Number *>(stack.top());
 		stack.pop();
 		cout <<  "answer is: " << ans->getValue() << endl;
+	}
+	while (stack.size() != 0) {
+		stack.pop();
+	}
+	for (int i = 0; i < del.size(); i++) {
+		cout << static_cast<Number *>(del[i])->getValue() << ": ";
+		delete del[i];
+		cout << "del" << endl;
 	}
 	return row + 1;
 }
@@ -536,9 +581,6 @@ int main() {
 		infixLines.push_back(parseLexem(codeline));
 	}	
 
-	for (int i = 0; i < infixLines.size(); i++) {		
- 		print(infixLines[i]);
-	}
 
 	initJumps(infixLines);
 
@@ -550,10 +592,17 @@ int main() {
 	 	postfixLines.push_back(buildPoliz(infix));
 	}
 
+	for (int i = 0; i < postfixLines.size(); i++) {		
+ 		print(postfixLines[i]);
+	}
 
 	int row = 0;
 	while (0 <= row && row < postfixLines.size()) {
 		row = evaluatePoliz(postfixLines[row], row);
+	}
+	for (int i = 0; i < infixLines.size(); i++) {
+		for (int j = 0; j < infixLines[i].size(); j++)
+			delete infixLines[i][j];
 	}
 
 	return 0;
