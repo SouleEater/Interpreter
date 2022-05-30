@@ -1,2 +1,3 @@
 all:
-	g++ source/1.cpp -o bin/interpreter
+	g++  usr/example.cpp src/interpreter.cpp \-I headers/ -o bin/interpreter
+

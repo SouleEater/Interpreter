@@ -3,31 +3,25 @@
 #include <vector>
 #include <stack>
 #include <map>
+#include "interpreter.h"
 
 using std::cout;
 using std::endl;
 
 std::map<std::string, int> vars;
 std::map<std::string, int> labels;
+std::map<std::string, std::vector<int> > ArrayTable;
 
-enum OPERATOR {
-	GOTO, ASSIGN, COLON,
-	LBRACKET, RBRACKET,
-	OR,
-	AND,
-	BITOR,
-	XOR,
-	BITAND,
-	EQ, NEQ,
-	SHL, SHR,
-	LEQ, LT, GEQ, GT,
-	PLUS, MINUS,
-	MULTIPLY, DIV, MOD
-};
+
 
 std::string OPERTEXT[] {
+	"if", "then",
+	"else", "endif",
+	"while", "endwhile",
 	"goto", "=", ":",
+	"array",
 	"(", ")",
+	"[", "]",
 	"or",
 	"and",
 	"|",
@@ -40,12 +34,13 @@ std::string OPERTEXT[] {
 	"*", "/", "%"
 };
 
-enum LEXEMTYPE {
-	NUM, OPER, VAR
-};
-
 int PRIORITY[] = {
+	-2, -2,
+	-2, -2,
+	-2, -2,
 	-2, 0, -2,
+	-2,
+	-1, -1,
 	-1, -1,
 	1,
 	2,
@@ -59,13 +54,7 @@ int PRIORITY[] = {
 	10, 10, 10
 };
 
-class Lexem {
-	LEXEMTYPE type;
-public:
-	Lexem();
-	void setLexemType(LEXEMTYPE type);
-	LEXEMTYPE getLexemtype();
-};
+
 
 void Lexem::setLexemType(LEXEMTYPE type) {
 	this->type = type;
@@ -76,38 +65,27 @@ LEXEMTYPE Lexem::getLexemtype() {
 }
 
 Lexem::Lexem() {
-
+	// cout << "Lexem" << endl;
 }
 
-class Number;
-class Oper;
-class Item;
+bool Variable::exists() {
+	return labels.find(name) != labels.end();
+}
 
-class Oper: public Lexem {
-	OPERATOR opertype;
-public:
-	Oper(OPERATOR op);
-	OPERATOR getType();
-	int getPriority();
-	int evalNum(int left, int right);
-	int getValue(Lexem* left, Lexem* right);
-	void print(OPERATOR op);
-};
+ArrayElem::ArrayElem(std::string name, int index) {
+	this->name =  name;
+	this->index = index;
+}
 
-class Item: public Lexem {
-public:
-	virtual int getValue() = 0;
-};
+int ArrayElem::getValue() {
+	return ArrayTable[name][index];
+}
 
-class Variable: public Item {
-	std::string name;
-public:
-	Variable(const std::string &name);
-	std::string getName();
-	int getValue();
-	void setValue(int value);
-	int getRow();
-};
+void ArrayElem::setValue(int value) {
+	ArrayTable[name][index] = value;
+}
+
+
 
 int Variable::getRow() {
 	return labels[name];
@@ -148,13 +126,7 @@ int Oper::getPriority() {
 	return PRIORITY[opertype];
 }
 
-class Number: public Item {
-	int value;
-public:
-	Number(int value);
-	void print(int value);
-	int getValue();
-};
+
 
 Number::Number(int val) {
 	setLexemType(NUM);
@@ -169,6 +141,17 @@ void Number::print(int value) {
 	std::cout << value << std::endl; 
 }
 
+Goto::Goto(OPERATOR opertype): Oper(opertype) {
+	row = UNDEFINED;
+}		
+
+void Goto::setRow(int row) {
+	Goto::row = row;
+}
+
+int Goto::getRow() {
+	return row;
+}
 
 int Oper::evalNum(int left, int right) {
 	if (opertype == MULTIPLY) {
@@ -228,14 +211,20 @@ int Oper::evalNum(int left, int right) {
 	return 0;
 }
 
-int Oper::getValue(Lexem *left, Lexem *right) {
+Lexem *Oper::getValue(Lexem *left, Lexem *right) {
 	if (opertype == ASSIGN) {
 		static_cast<Variable *>(left)->setValue(static_cast<Item *>(right)->getValue());
-		return static_cast<Item *>(right)->getValue();
+		return right;
 	} 
+	if (opertype == RQBRACKET) {
+		std::string name = static_cast<Variable *>(left)->getName();
+		int index = static_cast<Number *>(right)->getValue();
+		return new ArrayElem(name, index);
+		
+	}
 	int leftArg = static_cast<Item *>(left)->getValue();
 	int rightArg = static_cast<Item *>(right)->getValue();
-	return evalNum(leftArg, rightArg);
+	return new Number(evalNum(leftArg, rightArg));
 }
 
 Lexem *checkNum(std::string codeline, int &i) {
@@ -256,7 +245,9 @@ Lexem *checkOper(std::string codeline, int &i) {
 		std::string subcod = codeline.substr(i, OPERTEXT[j].size());
 		if (OPERTEXT[j] == subcod) {
 			i += OPERTEXT[j].size();
-			return new Oper((OPERATOR)j);
+			if (j == GOTO || j == IF || j == ELSE || j == WHILE || j == ENDWHILE || j == ENDIF)
+				return new Goto(OPERATOR(j));
+			return new Oper(OPERATOR(j));
 		}
 	}
 	return nullptr;
@@ -280,6 +271,7 @@ std::vector<Lexem *> parseLexem(std::string codeline) {
 	int i;
 	Lexem *ptr;
 	for (i = 0; i < codeline.size(); ) {
+
 		if (ptr = checkNum(codeline, i)) {
 			infix.push_back(ptr);
 			continue;
@@ -297,14 +289,6 @@ std::vector<Lexem *> parseLexem(std::string codeline) {
 	return infix;
 }
 
-/*void print(std::vector<Lexem *> vec) {
-	for (int i = 0; i < vec.size(); i++) {
-		if ((int)(vec[i]->getLexemtype())) {
-			cout << "oper is: " << OPERTEXT[(int)(((Oper *)vec[i])->getType())] << endl;
-		}
-		else cout << "number is: " << ((Number *)vec[i])->getValue() << endl;
-	}
-}*/
 
 void print(std::vector<Lexem *> vec) {
 	for (int i = 0; i < vec.size(); i++) {
@@ -342,21 +326,37 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 				stack.push(static_cast<Oper *>(infix[i]));
 				continue;
 			}
-			if (static_cast<Oper *>(infix[i])->getType() == LBRACKET) {
+			if (static_cast<Oper *>(infix[i])->getType() == LBRACKET || static_cast<Oper *>(infix[i])->getType() == LQBRACKET) {
 				stack.push(static_cast<Oper*>(infix[i]));
 				continue;
 			}
-			if (static_cast<Oper *>(infix[i])->getType() == RBRACKET) {
-				while (stack.top()->getType() != LBRACKET) {
+			if (static_cast<Oper *>(infix[i])->getType() == RBRACKET || static_cast<Oper *>(infix[i])->getType() == RQBRACKET) {
+				while (stack.top()->getType() != LBRACKET && stack.top()->getType() != LQBRACKET) {
 					postfix.push_back(stack.top());
 					stack.pop();
+				}
+				if (static_cast<Oper *>(infix[i])->getType() == RQBRACKET) {
+					postfix.push_back(static_cast<Oper *>(infix[i]));
 				}
 				stack.pop();
 				continue;
 			}
+
+			OPERATOR type = static_cast<Oper *>(infix[i])->getType();
+			if (type == GOTO || type == WHILE || type == IF || type == ELSE || type == ENDWHILE) {
+				if (type == GOTO) {
+					static_cast<Goto *>(infix[i])->setRow(labels[static_cast<Variable *>(infix[i + 1])->getName()]);
+				}
+				stack.push(static_cast<Oper *>(infix[i]));
+				continue;
+			}
+			if (type == ENDIF || type == THEN) {
+				continue;
+			}
 			Oper* x = stack.top();
 			if (static_cast<Oper *>(infix[i])->getPriority() < x->getPriority()) {
-				while (!stack.empty() && x->getType() != LBRACKET) {
+				while (!stack.empty() && x->getType() != LBRACKET && x->getType() != LQBRACKET 
+					&& static_cast<Oper *>(infix[i])->getPriority() < x->getPriority()) {
 					x = stack.top();
 					postfix.push_back(x);
 					stack.pop();
@@ -388,6 +388,7 @@ std::vector<Lexem *> buildPoliz(std::vector<Lexem *> infix) {
 
 int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 	std::stack<Lexem *> stack;
+	std::vector<Number *> del;
 	for (int i = 0; i < postfix.size(); i++) {
 		if (postfix[i] == nullptr) {
 			continue;
@@ -396,22 +397,66 @@ int evaluatePoliz(std::vector<Lexem *> postfix, int &row) {
 			stack.push(postfix[i]);
 		}
 		else {
-			if (static_cast<Oper *>(postfix[i])->getType() == GOTO) {
-				return static_cast<Variable *>(postfix[i - 1])->getRow();
+			if (static_cast<Oper *>(postfix[i])->getType() == GOTO 
+					|| static_cast<Oper *>(postfix[i])->getType() == ELSE 
+						|| static_cast<Oper *>(postfix[i])->getType() == ENDWHILE) {
+				return static_cast<Goto *>(postfix[i])->getRow();
+			}
+			if (static_cast<Oper *>(postfix[i])->getType() == IF
+					|| static_cast<Oper *>(postfix[i])->getType() == WHILE) {
+				Goto *lexemgoto = static_cast<Goto *>(postfix[i]);
+				int r = static_cast<Number *>(stack.top())->getValue();
+				stack.pop();
+				for (int i = 0; i < del.size(); i++) {
+						cout << static_cast<Number *>(del[i])->getValue() << ": ";
+						delete del[i];
+						cout << "del" << endl;
+					}
+				 if (!r) {
+					return lexemgoto->getRow();
+				}
+				else {
+					return row + 1;
+				}
 			}
 			Lexem *right = stack.top();
 			stack.pop();
 			Lexem *left = stack.top(); 
 			stack.pop();
-			Oper *ptr = static_cast<Oper *>(postfix[i]);
-			int n = ptr->getValue(left, right);
-			stack.push(new Number(n));
+			if (static_cast<Oper *>(postfix[i])->getType() == ARRAY) {
+				std::string name = static_cast<Variable *>(left)->getName();
+				int index = static_cast<Number *>(right)->getValue();
+				ArrayTable[name] = std::vector<int>(index);
+
+				for (int i = 0; i < del.size(); i++) {
+						cout << static_cast<Number *>(del[i])->getValue() << ": ";
+						delete del[i];
+						cout << "del" << endl;
+					}
+				return row + 1;
+			}
+
+			Lexem *ptr = static_cast<Oper *>(postfix[i])->getValue(left, right);
+			stack.push(ptr);
+			cout << "NEW: " << static_cast<Number *>(stack.top())->getValue() << endl;
+			del.push_back(static_cast<Number *>(stack.top()));
+			continue;
 		}
+
 	}
+
 	if (stack.size()) { 
 		Number *ans = static_cast<Number *>(stack.top());
 		stack.pop();
 		cout <<  "answer is: " << ans->getValue() << endl;
+	}
+	while (stack.size() != 0) {
+		stack.pop();
+	}
+	for (int i = 0; i < del.size(); i++) {
+		cout << static_cast<Number *>(del[i])->getValue() << ": ";
+		delete del[i];
+		cout << "del" << endl;
 	}
 	return row + 1;
 }
@@ -422,6 +467,10 @@ void initLabels(std::vector<Lexem *> &infix, int &row) {
 			Variable *lexemvar = static_cast<Variable *>(infix[i-1]);
 			Oper *lexemop = static_cast<Oper *>(infix[i]);
 			if (lexemop->getType() == COLON) {
+				cout << "T" << endl;
+				if (!lexemvar->exists()) {
+					labels.insert(std::pair<std::string, int>(lexemvar->getName(), row));
+				}
 				labels[lexemvar->getName()] = row;
 				delete infix[i - 1];
 				delete infix[i];
@@ -433,26 +482,46 @@ void initLabels(std::vector<Lexem *> &infix, int &row) {
 	} 
 }
 
-int main() {
-	std::string codeline;
-	std::vector<std::vector<Lexem *>> infixLines, postfixLines;
+void initJumps(std::vector< std::vector <Lexem *> > infixes) {
+	std::stack<Goto *> stackIfElse;
+	std::stack<Goto *> stackWhile;
+	for (int row = 0; row < (int)infixes.size(); row++) {
+		for (int i = 0; i < (int)infixes[row].size(); i++) {
+			if (infixes[row][i] == nullptr)
+				continue;
+			if (infixes[row][i]->getLexemtype() == OPER) {
+				Oper *lexemop = (Oper *)infixes[row][i];
+				
+				if (lexemop->getType() == WHILE) {
+					Goto *lexemgoto = (Goto *)lexemop;
+					lexemgoto->setRow(row);
+					stackWhile.push(lexemgoto);
+				}
 
-	while (std::getline(std::cin, codeline)) {
-		infixLines.push_back(parseLexem(codeline));
-	}	
-	for (int row = 0; row < infixLines.size(); row++) {
-		initLabels(infixLines[row], row);
+				if (lexemop->getType() == ENDWHILE) {
+					Goto *lexemgoto = (Goto *)lexemop;
+					lexemgoto->setRow(stackWhile.top()->getRow());
+					stackWhile.top()->setRow(row + 1);
+					stackWhile.pop();
+				}
+
+				if (lexemop->getType() == IF)
+					stackIfElse.push((Goto *)lexemop);
+				
+				if (lexemop->getType() == ELSE) {
+					stackIfElse.top()->setRow(row + 1);
+					stackIfElse.pop();
+					stackIfElse.push((Goto *)lexemop);
+				}
+
+				if (lexemop->getType() == ENDIF) {
+					stackIfElse.top()->setRow(row + 1);
+					stackIfElse.pop();
+				}
+			}
+		}
 	}
-	for (const auto &infix: infixLines) {
-	 	postfixLines.push_back(buildPoliz(infix));
-	}
-	for (int i = 0; i < postfixLines.size(); i++) {		
- 		print(postfixLines[i]);
-	}
-	int row = 0;
-	while (0 <= row && row < postfixLines.size()) {
-		row = evaluatePoliz(postfixLines[row], row);
-	}
-	return 0;
 }
+
+
 
